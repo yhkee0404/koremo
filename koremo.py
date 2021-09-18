@@ -3,15 +3,22 @@ import librosa
 
 mlen=500
 
-import tensorflow as tf
-from keras.backend.tensorflow_backend import set_session
-config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.01
-set_session(tf.Session(config=config))
-import keras.backend as K
+#import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
-from keras.models import load_model
-mse_crs = load_model('model/total_s_rmse_cnn_rnnself-20-0.9645-f0.9644.hdf5')
+#from keras.backend.tensorflow_backend import set_session
+#config = tf.ConfigProto()
+#config.gpu_options.per_process_gpu_memory_fraction = 0.01
+#set_session(tf.Session(config=config))
+
+#import keras.backend as K
+import tensorflow.compat.v1.keras.backend as K
+
+#from keras.models import load_model
+from tensorflow.compat.v1.keras.models import load_model
+
+#mse_crs = load_model('model/total_s_rmse_cnn_rnnself-20-0.9645-f0.9644.hdf5')
+mse_crs = load_model('model/model_for_6.h5')
 
 def make_data(filename):
   data=np.zeros((1,mlen,128))
@@ -22,7 +29,10 @@ def make_data(filename):
   y, sr = librosa.load(filename)
   D = np.abs(librosa.stft(y))**2
   ss, phase = librosa.magphase(librosa.stft(y))
-  rmse = librosa.feature.rmse(S=ss)
+  
+  #rmse = librosa.feature.rmse(S=ss)
+  rmse = librosa.feature.rms(S=ss)
+  
   rmse = rmse/np.max(rmse)
   rmse = np.transpose(rmse)
   S = librosa.feature.melspectrogram(S=D)
