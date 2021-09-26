@@ -8,63 +8,90 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.01
 set_session(tf.Session(config=config))
 import keras.backend as K
 
-from keras.models import load_model
-mse_crs = load_model('model/total_s_rmse_cnn_rnnself_re-19-0.9723-0.9701.hdf5', compile=False)
-
-def make_data(filenames, mlen = 500):
+def make_x(filenames, mlen=500):
   fnum = len(filenames)
-  data             = np.zeros((fnum,mlen,128))
-  data_conv        = np.zeros((fnum,mlen,128,1))
-  data_rmse        = np.zeros((fnum,mlen,1))
-  data_s_rmse      = np.zeros((fnum,mlen,129))
-  data_s_rmse_conv = np.zeros((fnum,mlen,129,1))
+  shape = (fnum,mlen,129)
+  data_s_rmse = np.zeros(shape)
   for i in range(fnum):
     j = i + 1
-    if j % 100 == 0:
-      print(j)
     filename = '../data/' + filenames[i]
+
     y, sr = librosa.load(filename)
     D = np.abs(librosa.stft(y))**2
     ss, phase = librosa.magphase(librosa.stft(y))
     rmse = librosa.feature.rmse(S=ss)
-    rmse = rmse/np.max(rmse)
-    rmse = np.transpose(rmse)
-    S = librosa.feature.melspectrogram(S=D)
-    S = np.transpose(S)
-    Srmse = np.multiply(rmse,S)
-    if len(S)>=mlen:
-      data[i][:,:]=S[-mlen:,:]
-      data_conv[i][:,:,0]=S[-mlen:,:]
-      data_rmse[i][:,0]=rmse[-mlen:,0]
-      data_s_rmse[i][:,0]=rmse[-mlen:,0]
-      data_s_rmse[i][:,1:]=S[-mlen:,:]
-      data_s_rmse_conv[i][:,0,0]=rmse[-mlen:,0]
-      data_s_rmse_conv[i][:,1:,0]=S[-mlen:,:]
-    else:
-      data[i][-len(S):,:]=S
-      data_conv[i][-len(S):,:,0]=S
-      data_rmse[i][-len(S):,0]=np.transpose(rmse)
-      data_s_rmse[i][-len(S):,0]=np.transpose(rmse)
-      data_s_rmse[i][-len(S):,1:]=S
-      data_s_rmse_conv[i][-len(S):,0,0]=np.transpose(rmse)
-      data_s_rmse_conv[i][-len(S):,1:,0]=S
-  return data,data_conv,data_rmse,data_s_rmse,data_s_rmse_conv
+    rmse = (rmse/np.max(rmse)).T
+    S = librosa.feature.melspectrogram(S=D).T
 
-def pred_emo(filenames):
-  data,data_conv,data_rmse,data_s_rmse,data_s_rmse_conv =make_data(filenames)
-  att_source= np.zeros((len(filenames),64))
-  zs = np.asarray(mse_crs.predict([data_s_rmse_conv,data_s_rmse,att_source]))
-  ys = np.argmax(zs,axis=1)
-  # if y==0:
-  #   print(">> Angry")
-  # if y==1:
-  #   print(">> Fear")
-  # if y==2:
-  #   print(">> Joy")
-  # if y==3:
-  #   print(">> Normal")
-  # if y==4:
-  #   print(">> Sad")
-  return ys
+    data_s_rmse[i][-min(mlen, len(S)):]=np.concatenate((rmse, S), axis=1)[-mlen:]
+  data_s_rmse_conv = data_s_rmse.view()
+  data_s_rmse_conv.shape = shape + (1,)
+  return [data_s_rmse_conv,data_s_rmse,np.zeros((fnum,64))]
+
+def pred_emo(model, filenames):
+  z = model.predict(make_x(filenames))
+  y = np.argmax(z, axis=1)
+  return y
+  
+def pred_data_s_rmse(model, filename, start=0, batch_size=500):
+  import mmap, os
+
+  filenames = os.listdir('../data')
+  fnum = len(filenames)
+  y_total = np.zeros(fnum)
+  x = [0, 0, np.zeros((fnum,64))]
+  for i in range(start, fnum, batch_size):
+    min_batch_size = min(fnum - i, batch_size)
+    j = i + min_batch_size
+    with open('../data_s_rmse/' + str(j) + '.npy', 'rb') as f:
+      mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+
+      version = np.lib.format.read_magic(f)
+      np.lib.format._check_version(version)
+      shape, fortran_order, dt = np.lib.format._read_array_header(f, version)
+
+      if fortran_order:
+        order = 'F'
+      else:
+        order = 'C'
+      if dt.hasobject:
+        msg = "Array can't be memory-mapped: Python objects in dtype."
+        raise ValueError(msg)
+
+      x[1] = np.ndarray(shape, dtype=np.dtype(dt), buffer=mm, offset=0, order=order)
+      x[0] = x[1].view()
+      x[0].shape = shape + (1,)
+      
+      z = np.asarray(model.predict(x))
+      y = np.argmax(z,axis=1)
+      
+      y_total[i:j] = y
+
+      mm.close()
+  np.save(filename, y_total)
+
+def save_data_s_rmse(start=0, batch_size=500, mlen=500):
+  import os
+
+  filenames = os.listdir('../data')
+  filenames.sort()
+  fnum = len(filenames)
+  for i in range(start, fnum, batch_size):
+    min_batch_size = min(fnum - i, batch_size)
+
+    data_s_rmse = np.zeros((min_batch_size,mlen,129))
+    for j in range(min_batch_size):
+      k = i + j
+      filename = '../data/' + filenames[k]
+
+      y, sr = librosa.load(filename)
+      D = np.abs(librosa.stft(y))**2
+      ss, phase = librosa.magphase(librosa.stft(y))
+      rmse = librosa.feature.rms(S=ss)
+      rmse = (rmse/np.max(rmse)).T
+      S = librosa.feature.melspectrogram(S=D).T
+
+      data_s_rmse[j][-min(mlen, len(S)):]=np.concatenate((rmse, S), axis=1)[-mlen:]
+    np.save('../data_s_rmse/' + str(i + min_batch_size), data_s_rmse)
 
 
