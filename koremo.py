@@ -13,7 +13,6 @@ def make_x(filenames, mlen=500):
   shape = (fnum,mlen,129)
   data_s_rmse = np.zeros(shape)
   for i in range(fnum):
-    j = i + 1
     filename = '../data/' + filenames[i]
 
     y, sr = librosa.load(filename)
@@ -44,21 +43,37 @@ def pred_data_s_rmse(model, filename, start=0, batch_size=500):
     min_batch_size = min(fnum - i, batch_size)
     j = i + min_batch_size
     with open('../data_s_rmse/' + str(j) + '.npy', 'rb') as f:
-      mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-
       version = np.lib.format.read_magic(f)
       np.lib.format._check_version(version)
-      shape, fortran_order, dt = np.lib.format._read_array_header(f, version)
+
+      shape, fortran_order, dtype = np.lib.format._read_array_header(f, version)
+      if dtype.hasobject:
+        msg = "Array can't be memory-mapped: Python objects in dtype."
+        raise ValueError(msg)
+      offset = f.tell()
 
       if fortran_order:
         order = 'F'
       else:
         order = 'C'
-      if dt.hasobject:
-        msg = "Array can't be memory-mapped: Python objects in dtype."
-        raise ValueError(msg)
 
-      x[1] = np.ndarray(shape, dtype=np.dtype(dt), buffer=mm, offset=0, order=order)
+      f.seek(0, 2)
+      flen = f.tell()
+      descr = np.dtype(dtype)
+      _dbytes = descr.itemsize
+
+      size = np.intp(1)  # avoid default choice of np.int_, which might overflow
+      for k in shape:
+          size *= k
+
+      length = int(offset + size*_dbytes)
+
+      array_offset = offset % mmap.ALLOCATIONGRANULARITY
+      offset -= array_offset
+      length -= offset
+      mm = mmap.mmap(f.fileno(), length, access=mmap.ACCESS_READ, offset=offset)
+
+      x[1] = np.ndarray(shape, dtype=descr, buffer=mm, offset=array_offset, order=order)
       x[0] = x[1].view()
       x[0].shape = shape + (1,)
       
@@ -87,7 +102,7 @@ def save_data_s_rmse(start=0, batch_size=500, mlen=500):
       y, sr = librosa.load(filename)
       D = np.abs(librosa.stft(y))**2
       ss, phase = librosa.magphase(librosa.stft(y))
-      rmse = librosa.feature.rms(S=ss)
+      rmse = librosa.feature.rmse(S=ss)
       rmse = (rmse/np.max(rmse)).T
       S = librosa.feature.melspectrogram(S=D).T
 
