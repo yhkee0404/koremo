@@ -8,6 +8,8 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.01
 set_session(tf.Session(config=config))
 import keras.backend as K
 
+import mmap
+
 def make_x(filenames, mlen=500):
   fnum = len(filenames)
   shape = (fnum,mlen,129)
@@ -27,24 +29,17 @@ def make_x(filenames, mlen=500):
   data_s_rmse_conv.shape = shape + (1,)
   return [data_s_rmse_conv,data_s_rmse,np.zeros((fnum,64))]
 
-def pred_emo(model, filenames):
-  z = model.predict(make_x(filenames))
+def pred_emo(model, filenames, mlen=500):
+  z = model.predict(make_x(filenames, mlen=mlen))
   y = np.argmax(z, axis=1)
   return y
-  
-def pred_data_s_rmse(model, filename, start=0, batch_size=500):
-  import mmap, os
 
-  filenames = os.listdir('../data')
-  fnum = len(filenames)
+def pred_data_s_rmse(model, filenames):
+  fnum = int(filenames[-1][:-len('.npy')])
   y_total = np.zeros(fnum)
-  x = [0, 0, np.zeros((batch_size,64))]
-  for i in range(start, fnum, batch_size):
-    min_batch_size = min(fnum - i, batch_size)
-    if min_batch_size != batch_size:
-      x[2] = np.zeros((min_batch_size,64))
-    j = i + min_batch_size
-    with open('../data_s_rmse/' + str(j) + '.npy', 'rb') as f:
+  x = [None, None, None]
+  for filename in filenames:
+    with open('../data_s_rmse/' + filename, 'rb') as f:
       version = np.lib.format.read_magic(f)
       np.lib.format._check_version(version)
 
@@ -75,6 +70,9 @@ def pred_data_s_rmse(model, filename, start=0, batch_size=500):
       length -= offset
       mm = mmap.mmap(f.fileno(), length, access=mmap.ACCESS_READ, offset=offset)
 
+      batch_size = shape[0]
+      if x[2] is None:
+        x[2] = np.zeros((batch_size,64))
       x[1] = np.ndarray(shape, dtype=descr, buffer=mm, offset=array_offset, order=order)
       x[0] = x[1].view()
       x[0].shape = shape + (1,)
@@ -82,16 +80,14 @@ def pred_data_s_rmse(model, filename, start=0, batch_size=500):
       z = np.asarray(model.predict(x))
       y = np.argmax(z,axis=1)
       
-      y_total[i:j] = y
+      end = int(filename[:-len('.npy')])
+      start = end - batch_size
+      y_total[start:end] = y
 
       mm.close()
-  np.save(filename, y_total)
+  return y_total
 
-def save_data_s_rmse(start=0, batch_size=500, mlen=500):
-  import os
-
-  filenames = os.listdir('../data')
-  filenames.sort()
+def save_data_s_rmse(filenames, mlen=500, start=0, batch_size=100):
   fnum = len(filenames)
   for i in range(start, fnum, batch_size):
     min_batch_size = min(fnum - i, batch_size)
