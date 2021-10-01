@@ -1,12 +1,8 @@
 import numpy as np
 import librosa
 
-import tensorflow as tf
-from keras.backend.tensorflow_backend import set_session
-config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.01
-set_session(tf.Session(config=config))
-import keras.backend as K
+import tensorflow.compat.v1 as tf
+import tensorflow.compat.v1.keras.backend as K
 
 import mmap
 
@@ -20,7 +16,7 @@ def make_x(filenames, mlen=500):
     y, sr = librosa.load(filename)
     D = np.abs(librosa.stft(y))**2
     ss, phase = librosa.magphase(librosa.stft(y))
-    rmse = librosa.feature.rmse(S=ss)
+    rmse = librosa.feature.rms(S=ss)
     rmse = (rmse/np.max(rmse)).T
     S = librosa.feature.melspectrogram(S=D).T
 
@@ -39,7 +35,7 @@ def pred_data_s_rmse(model, filenames):
   y_total = np.zeros(fnum)
   x = [None, None, None]
   for filename in filenames:
-    with open('../data_s_rmse/' + filename, 'rb') as f:
+    with open(np.compat.os_fspath('../data_s_rmse/' + filename), 'rb') as f:
       version = np.lib.format.read_magic(f)
       np.lib.format._check_version(version)
 
@@ -100,7 +96,7 @@ def save_data_s_rmse(filenames, mlen=500, start=0, batch_size=100):
       y, sr = librosa.load(filename)
       D = np.abs(librosa.stft(y))**2
       ss, phase = librosa.magphase(librosa.stft(y))
-      rmse = librosa.feature.rmse(S=ss)
+      rmse = librosa.feature.rms(S=ss)
       rmse = (rmse/np.max(rmse)).T
       S = librosa.feature.melspectrogram(S=D).T
 
