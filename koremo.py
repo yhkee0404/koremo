@@ -38,9 +38,11 @@ def pred_data_s_rmse(model, filename, start=0, batch_size=500):
   filenames = os.listdir('../data')
   fnum = len(filenames)
   y_total = np.zeros(fnum)
-  x = [0, 0, np.zeros((fnum,64))]
+  x = [0, 0, np.zeros((batch_size,64))]
   for i in range(start, fnum, batch_size):
     min_batch_size = min(fnum - i, batch_size)
+    if min_batch_size != batch_size:
+      x[2] = np.zeros((min_batch_size,64))
     j = i + min_batch_size
     with open('../data_s_rmse/' + str(j) + '.npy', 'rb') as f:
       version = np.lib.format.read_magic(f)
