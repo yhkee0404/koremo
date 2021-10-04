@@ -6,6 +6,17 @@ import tensorflow.compat.v1.keras.backend as K
 
 import mmap
 
+labels = ['Angry', 'Fear', 'Joy', 'Normal', 'Sad']
+
+def decode_predictions(preds):
+  global labels
+  results = []
+  for pred in preds:
+    result = list(zip(labels, pred))
+    result.sort(key=lambda x: x[-1], reverse=True)
+    results.append(result)
+  return results
+
 def make_x(ys, mlen=500):
   ynum = len(ys)
   shape = (ynum,mlen,129)
@@ -25,9 +36,8 @@ def make_x(ys, mlen=500):
 
 def pred_emo(model, ys, mlen=500):
   x = make_x(ys, mlen=mlen)
-  z = model.predict(x)
-  y = np.argmax(z, axis=1)
-  return y
+  preds = model.predict(x)
+  return decode_predictions(preds)
 
 def pred_data_s_rmse(model, filenames):
   fnum = int(filenames[-1][:-len('.npy')])
