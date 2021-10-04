@@ -6,14 +6,12 @@ import tensorflow.compat.v1.keras.backend as K
 
 import mmap
 
-def make_x(filenames, mlen=500):
-  fnum = len(filenames)
-  shape = (fnum,mlen,129)
+def make_x(ys, mlen=500):
+  ynum = len(ys)
+  shape = (ynum,mlen,129)
   data_s_rmse = np.zeros(shape)
-  for i in range(fnum):
-    filename = '../data/' + filenames[i]
-
-    y, sr = librosa.load(filename)
+  for i in range(ynum):
+    y = ys[i]
     D = np.abs(librosa.stft(y))**2
     ss, phase = librosa.magphase(librosa.stft(y))
     rmse = librosa.feature.rms(S=ss)
@@ -23,10 +21,11 @@ def make_x(filenames, mlen=500):
     data_s_rmse[i][-min(mlen, len(S)):]=np.concatenate((rmse, S), axis=1)[-mlen:]
   data_s_rmse_conv = data_s_rmse.view()
   data_s_rmse_conv.shape = shape + (1,)
-  return [data_s_rmse_conv,data_s_rmse,np.zeros((fnum,64))]
+  return [data_s_rmse_conv,data_s_rmse,np.zeros((ynum,64))]
 
-def pred_emo(model, filenames, mlen=500):
-  z = model.predict(make_x(filenames, mlen=mlen))
+def pred_emo(model, ys, mlen=500):
+  x = make_x(ys, mlen=mlen)
+  z = model.predict(x)
   y = np.argmax(z, axis=1)
   return y
 
